@@ -8,18 +8,147 @@ output:
 
 ## Loading and preprocessing the data
 
+### Load the data
+
+```{r, echo=TRUE}
+DF <- read.csv(unz("activity.zip", "activity.csv"))
+```
+
+### Process/transform the data
+
+**Intervals**
+
+The column `interval` represents 5-minute intervals.
+
+```{r, echo=TRUE}
+unique(DF$interval)
+```
+
+The intervals were coded by appending the hour and minute and then casting to integers. These can be converted to strings, padded with zeros on the left.
+
+```{r, echo=TRUE}
+DF$interval <- formatC(DF$interval, width=4, flag=0)
+```
+
+**Dates**
+
+The column `date` represents dates in YYYY-MM-HH format. These can be converted to `Date` objects.
+
+```{r, echo=TRUE}
+DF$date <- as.Date(DF$date)
+```
 
 
 ## What is mean total number of steps taken per day?
 
+Ignore missing values for this section.
+
+### Total steps per day
+
+```{r, echo=TRUE}
+daily_totals <- aggregate(steps ~ date, DF, sum)
+daily_totals
+```
+
+### Histogram of total steps per day
+
+```{r, echo=TRUE}
+hist(daily_totals$steps, xlab="Total Steps", ylab="# Days",
+     main="Histogram of Total Steps per Day")
+```
+
+### Mean and median steps per day
+
+```{r, echo=TRUE}
+mean(daily_totals$steps, na.rm=TRUE)
+median(daily_totals$steps, na.rm=TRUE)
+```
 
 
 ## What is the average daily activity pattern?
 
+Ignore missing values for this section too.
+
+### Time series plot of average steps per interval
+
+```{r, echo=TRUE}
+interval_avgs <- aggregate(steps ~ interval, DF, mean, na.rm=TRUE)
+plot(strptime(interval_avgs$interval, format="%H%M"), interval_avgs$steps, type="l",
+     xlab="Time", ylab="Average Steps in 5-Minute Interval", main="Time Series Plot of Daily Pattern")
+```
+
+### Interval with maximum average steps
+
+```{r, echo=TRUE}
+interval_avgs$interval[which.max(interval_avgs$steps)]
+```
 
 
 ## Imputing missing values
 
+### Total missing values
+
+```{r, echo=TRUE}
+sum(is.na(DF$steps))
+```
+
+### Imputation strategy
+
+```{r, echo=TRUE}
+tapply(DF$steps, DF$date, function(x) sum(is.na(x)))
+```
+
+There are 8 days completely missing, and the other days have no missing data.
+
+Impute using the mean for each 5-minute interval.
+
+### Apply imputation
+
+```{r, echo=TRUE}
+DF_fill <- DF
+avg_steps <- rep(interval_avgs$steps, length=dim(DF)[1])
+DF_fill$steps <- ifelse(is.na(DF$steps), avg_steps, DF$steps)
+head(DF_fill)
+```
+
+### Total steps per day, after imputation
+
+```{r, echo=TRUE}
+daily_totals_fill <- aggregate(steps ~ date, DF_fill, sum)
+hist(daily_totals_fill$steps, xlab="Total Steps", ylab="# Days",
+     main="Histogram of Total Steps per Day - Imputed")
+mean(daily_totals_fill$steps)
+median(daily_totals_fill$steps)
+```
+
+The mean total daily steps did not change due to imputation. The median increased slightly.
+
+The total daily number of steps only changed for the 8 days with missing data. These days were completely missing, so they were replaced with the average at each interval. Consequently, their totals are the average total.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Use the imputed data for this section.
+
+### Create a weekday/weekend factor
+
+```{r, echo=TRUE}
+DF_fill$weekday <- as.factor(ifelse(weekdays(DF_fill$date) %in% c("Saturday", "Sunday"), "weekend", "weekday"))
+head(DF_fill)
+```
+
+### Time series plot of average steps per interval, panel by weekday/weekend
+
+```{r, echo=TRUE}
+interval_weekday_avgs <- aggregate(steps~interval*weekday, DF_fill, mean)
+interval_weekday_avgs$interval <- strptime(interval_weekday_avgs$interval, format="%H%M", tz="UTC")
+
+library(ggplot2)
+library(scales)
+ggplot(interval_weekday_avgs, aes(interval, steps)) + geom_line() + facet_grid(weekday~.) +
+  scale_x_datetime(labels = date_format("%H:%M")) + theme_bw() +
+  labs(title="Daily Pattern - Imputed, Weekday vs Weekend", x="Time", y="Average Steps in 5-Minute Interval")
+```
+
+The mid-morning peak is higher on weekdays. The other peaks are lower on weekdays. Activity starts a few hours earlier on weekdays and ends a few hours later on weekends.
+
